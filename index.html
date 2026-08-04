@@ -539,6 +539,11 @@
       <button class="ghost-btn danger" id="btnClearAll">🗑️ 清空全部</button>
     </div>
 
+    <div class="toggle">
+      <div class="t-txt"><b>清理孤兒檔案</b><small id="orphanInfo">上傳中斷會留下沒進清單的殘留檔,看不到也刪不掉,只佔空間</small></div>
+      <button class="ghost-btn" id="btnOrphan">🧹 掃描</button>
+    </div>
+
     <button class="primary" id="btnSave">儲存設定</button>
 
     <div class="app-foot">
@@ -600,7 +605,7 @@
 <div class="toasts" id="toasts"></div>
 
 <script>
-const APP_VERSION = 'v18';  /* 每次改版就 +1,方便確認有更新到 */
+const APP_VERSION = 'v19';  /* 每次改版就 +1,方便確認有更新到 */
 
 /* ============ 設定 (localStorage) ============ */
 const CFG_KEY = 'cft.config.v1';
@@ -717,6 +722,14 @@ async function ghPut(path, bytes, sha){
     headers:{...ghHeaders(),'Content-Type':'application/json'}, body:JSON.stringify(body)});
   if(!r.ok) throw await ghErr(r,'上傳失敗');
   const d = await r.json(); return d.content.sha;
+}
+/* 列出資料夾內容(只有 metadata,不下載檔案本體)。資料夾不存在回空陣列 */
+async function ghListDir(path){
+  const r = await fetch(`${repoBase()}/contents/${path}`, {headers:ghHeaders()});
+  if(r.status===404) return [];
+  if(!r.ok) throw await ghErr(r,'讀取清單失敗');
+  const d = await r.json();
+  return Array.isArray(d) ? d : [];
 }
 async function ghDelete(path, sha){
   const r = await fetch(`${repoBase()}/contents/${path}`, {method:'DELETE',
@@ -1316,6 +1329,10 @@ function openSettings(){
   $('#inPat').value=cfg.pat; $('#inPass').value=cfg.password;
   $('#swAutoDel').classList.toggle('on', cfg.autoDelete);
   $('#testResult').className='test-result';
+  // 每次開設定都把清理狀態歸零,避免上次掃到的舊結果被誤按
+  orphanFound=null;
+  $('#btnOrphan').textContent='🧹 掃描'; $('#btnOrphan').classList.remove('danger');
+  $('#orphanInfo').textContent='上傳中斷會留下沒進清單的殘留檔,看不到也刪不掉,只佔空間';
   updateStorInfo(); updatePassCode();
   overlay.classList.add('open');
 }
@@ -1329,6 +1346,66 @@ async function updatePassCode(){
   el.textContent = [h[0],h[1],h[2],h[3]].map(b=>AB[b%AB.length]).join('');
 }
 $('#inPass').addEventListener('input', updatePassCode);
+/* ============ 清理孤兒檔案 ============
+   上傳中斷(或 v18 之前的索引撞車 bug)會讓 data/ 裡留下沒被清單記錄的檔案,
+   在 App 裡看不到、刪不掉,只是佔空間。這裡掃出來讓使用者確認後刪除。
+   安全前提:一定要先成功「解密」索引才知道哪些是活的;解不開就整個中止,
+   否則會把全部檔案都當成孤兒刪光。 */
+let orphanFound = null;   // null=尚未掃描 / [{path, sha, size}]
+
+async function scanOrphans(){
+  if(!requireConfig()) return;
+  if(activeBatches>0 || uploading.size>0 || flushing){
+    toast('err','還有檔案正在上傳,請等傳完再掃描'); return;
+  }
+  const btn=$('#btnOrphan'), info=$('#orphanInfo');
+  btn.disabled=true; btn.textContent='掃描中…';
+  try{
+    // 必須先讀到並解得開索引,才知道哪些檔案是活的
+    await withIndexLock(()=>loadIndex());
+    const alive = new Set(idx.files.filter(f=>f.path).map(f=>f.path));
+    const listed = await ghListDir('data');
+    orphanFound = listed
+      .filter(x => x.type==='file' && !alive.has(x.path))
+      .map(x => ({path:x.path, sha:x.sha, size:x.size||0}));
+    if(!orphanFound.length){
+      info.textContent = `乾淨的,${listed.length} 個檔案都在清單中`;
+      btn.textContent='🧹 掃描'; orphanFound=null;
+    }else{
+      const bytes = orphanFound.reduce((s,o)=>s+o.size,0);
+      info.textContent = `找到 ${orphanFound.length} 個殘留檔 · 共 ${fmtSize(bytes)}(雲端共 ${listed.length} 個)`;
+      btn.textContent = `刪除 ${orphanFound.length} 個`;
+      btn.classList.add('danger');
+    }
+  }catch(e){
+    orphanFound=null; btn.textContent='🧹 掃描';
+    info.textContent = e.decrypt
+      ? '密碼解不開索引,為安全起見不進行清理(否則會誤刪全部檔案)'
+      : `掃描失敗:${e.message}`;
+    toast('err', info.textContent);
+  }finally{ btn.disabled=false; }
+}
+
+async function deleteOrphans(){
+  if(!orphanFound || !orphanFound.length) return;
+  const bytes = orphanFound.reduce((s,o)=>s+o.size,0);
+  if(!confirm(`確定刪除 ${orphanFound.length} 個殘留檔(${fmtSize(bytes)})?\n\n這些檔案不在清單中,App 裡看不到它們。此動作無法復原。`)) return;
+  const btn=$('#btnOrphan'), info=$('#orphanInfo');
+  btn.disabled=true;
+  const list=orphanFound; let ok=0, bad=0;
+  // 逐一刪除:每次刪除都是一次 commit,並行會互相衝突
+  for(let i=0;i<list.length;i++){
+    btn.textContent=`刪除中 ${i+1}/${list.length}`;
+    try{ await ghDelete(list[i].path, list[i].sha); ok++; }
+    catch(e){ bad++; }
+  }
+  orphanFound=null;
+  btn.textContent='🧹 掃描'; btn.classList.remove('danger'); btn.disabled=false;
+  info.textContent = bad ? `已刪除 ${ok} 個,${bad} 個失敗(可再按一次掃描)` : `已清理 ${ok} 個殘留檔`;
+  toast(bad?'err':'ok', info.textContent);
+  updateStorInfo();
+}
+
 async function updateStorInfo(){
   const total = idx.files.reduce((s,f)=>s+(f.size||0),0);
   const base = idx.files.length
@@ -1347,6 +1424,9 @@ $('#swAutoDel').addEventListener('click', ()=> $('#swAutoDel').classList.toggle(
 
 /* 清空全部 */
 /* 清空全部:直接列雲端檔案硬刪,「不需要解密」——密碼救援也靠它 */
+/* 掃描 → 顯示結果 → 再按一次才刪(避免誤觸) */
+$('#btnOrphan').addEventListener('click', ()=> orphanFound ? deleteOrphans() : scanOrphans());
+
 $('#btnClearAll').addEventListener('click', async ()=>{
   if(!isConfigured()){ toast('info','請先完成設定'); return; }
   if(!confirm('確定刪除雲端「全部」檔案?此動作無法復原!\n(密碼對不上時,清空後重新上傳即可復原使用)')) return;
