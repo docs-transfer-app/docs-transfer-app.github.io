@@ -180,6 +180,30 @@
   .note-acts button.copy{background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#fff;border-color:transparent}
   .note-acts button.copy.done{background:var(--ok)}
 
+  /* 資料夾橫列 */
+  .folder-strip{display:flex;gap:7px;overflow-x:auto;margin:0 -16px 13px;padding:2px 16px 4px;
+    scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .folder-strip::-webkit-scrollbar{display:none}
+  .folder-strip:empty{display:none}
+  .fchip{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;
+    height:34px;padding:0 13px;border-radius:999px;cursor:pointer;
+    background:var(--surface);border:1px solid var(--border);color:var(--text);
+    font-size:12.5px;font-weight:600;white-space:nowrap;
+    transition:background .2s,border-color .2s,transform .12s,color .2s}
+  .fchip:active{transform:scale(.94)}
+  .fchip .n{color:var(--muted);font-weight:700;font-size:11px;font-variant-numeric:tabular-nums}
+  .fchip.on{background:var(--grad);border-color:transparent;color:#fff;
+    box-shadow:0 5px 13px rgba(61,139,240,.4)}
+  .fchip.on .n{color:rgba(255,255,255,.85)}
+  .fchip.add{border-style:dashed;color:var(--accent);
+    border-color:color-mix(in srgb,var(--accent) 45%,var(--border))}
+  .fchip .edit{display:grid;place-items:center;width:18px;height:18px;margin-right:-4px;
+    border-radius:50%;background:rgba(255,255,255,.25)}
+  .fchip .edit svg{width:11px;height:11px}
+  /* 卡片上顯示所屬資料夾 */
+  .finfo .fmeta .infolder{color:var(--accent);font-weight:650;flex:0 0 auto;
+    max-width:96px;overflow:hidden;text-overflow:ellipsis}
+
   /* Section label */
   .sec-head{display:flex;align-items:center;justify-content:space-between;margin:2px 4px 12px}
   .sec-head h2{font-size:14px;font-weight:700;margin:0;display:flex;align-items:center;gap:7px}
@@ -447,6 +471,8 @@
       </span>
     </button>
 
+    <div class="folder-strip" id="folderStrip"></div>
+
     <div class="sec-head">
       <h2 id="secTitle">🕐 最近</h2>
       <span class="count-pill" id="countPill">0 個檔案</span>
@@ -553,6 +579,25 @@
   </div>
 </div>
 
+<!-- Folder editor -->
+<div class="overlay" id="folderOverlay">
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3 id="folderTitle">新增資料夾</h3>
+    <p class="sub" id="folderSub">資料夾可以放任何類型的檔案,圖片、PDF、Word 都能放在一起。</p>
+    <div class="field">
+      <label>資料夾名稱</label>
+      <input id="folderName" placeholder="例如 三月報價" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" />
+    </div>
+    <div class="note-acts">
+      <button id="folderCancel">取消</button>
+      <button class="primary" id="folderSave">建立</button>
+    </div>
+    <button class="ghost-btn danger hidden" id="folderDelete" style="width:100%;padding:11px;margin-top:10px">🗑️ 刪除這個資料夾</button>
+    <p class="sub hidden" id="folderDelHint" style="margin:8px 0 0;font-size:11.5px">刪除資料夾<b>不會</b>刪掉裡面的檔案,它們會回到「未分類」。</p>
+  </div>
+</div>
+
 <!-- Note editor -->
 <div class="overlay" id="noteOverlay">
   <div class="sheet">
@@ -605,7 +650,7 @@
 <div class="toasts" id="toasts"></div>
 
 <script>
-const APP_VERSION = 'v19';  /* 每次改版就 +1,方便確認有更新到 */
+const APP_VERSION = 'v20';  /* 每次改版就 +1,方便確認有更新到 */
 
 /* ============ 設定 (localStorage) ============ */
 const CFG_KEY = 'cft.config.v1';
@@ -747,6 +792,13 @@ async function loadIndex(){
   try{ idx = JSON.parse(td.decode(await decBytes(res.bytes))); }
   catch(e){ const err=new Error('密碼解不開雲端資料!① 兩台開 ⚙️ 比對密碼「校驗碼」是否相同 ② 若相同仍失敗=雲端是舊密碼的資料,到 ⚙️ 按「清空全部」重置後重新上傳'); err.decrypt=true; throw err; }
   if(!idx.files) idx.files=[];
+  // 舊索引沒有資料夾欄位,補預設值即可,不需要轉檔
+  if(!Array.isArray(idx.folders)) idx.folders=[];
+  idx.files.forEach(f=>{ if(typeof f.folder!=='string') f.folder=''; });
+  // 資料夾被別台裝置刪掉時,把指向它的檔案退回未分類
+  const fids=new Set(idx.folders.map(x=>x.id));
+  idx.files.forEach(f=>{ if(f.folder && !fids.has(f.folder)) f.folder=''; });
+  if(activeFolder && !fids.has(activeFolder)) activeFolder='';
   // 清掉已不存在檔案的縮圖快取
   let pruned=false;
   Object.keys(thumbs).forEach(k=>{ if(thumbs[k]!=='x' && !idx.files.some(f=>f.id===k)){ delete thumbs[k]; pruned=true; } });
@@ -918,6 +970,8 @@ async function ghPutData(path, bytes, onProgress){
   throw last;
 }
 
+/* 按下上傳當下所在的資料夾。傳到一半使用者切走也不受影響 */
+let folderAtUploadStart = '';
 async function uploadOne(id, file){
   const cat = categorize(file.name);
   const u = uploading.get(id);
@@ -932,7 +986,8 @@ async function uploadOne(id, file){
     if(uu && uu.pct!==p){ uu.pct=p; uu.status=`上傳中… ${p}%`; render(); }
   });
   u.status='寫入清單…'; render();
-  await queueIndexAdd({id, name:file.name, category:cat, size:file.size, time:Date.now(), sha, path});
+  await queueIndexAdd({id, name:file.name, category:cat, size:file.size, time:Date.now(),
+                       sha, path, folder:folderAtUploadStart});
   if(seenIds){ seenIds.add(id); saveSeen(); }       // 自己傳的視為已讀
 }
 
@@ -940,6 +995,7 @@ async function handleFiles(fileList){
   if(!requireConfig()) return;
   const files = [...fileList];
   if(!files.length) return;
+  folderAtUploadStart = targetFolder();
 
   const items = files.map(file => {
     const id = crypto.randomUUID();
@@ -979,6 +1035,121 @@ async function handleFiles(fileList){
     else toast('err', `${ok} 個成功 / ${fail} 個失敗:${failed.slice(0,2).join('、')}${fail>2?' 等':''}`);
   }
 }
+
+/* ============ 資料夾 ============ */
+/* 資料夾是跨分類的:同一個資料夾可以同時放圖片、PDF、Word。
+   單層,不做巢狀。刪除資料夾只把裡面的檔案退回未分類,不刪檔。 */
+function folderName(id){ const f=(idx.folders||[]).find(x=>x.id===id); return f?f.name:''; }
+function folderCount(id){
+  return idx.files.filter(f =>
+    (activeCat==='recent' || f.category===activeCat) &&
+    (id==='none' ? !f.folder : f.folder===id)
+  ).length;
+}
+/* 上傳/新增文字時要歸到哪個資料夾:停在某個資料夾裡就歸進去 */
+function targetFolder(){
+  return (activeFolder && activeFolder!=='none') ? activeFolder : '';
+}
+
+let editingFolder = null;   // null = 新增模式 / id = 編輯模式
+function openFolderEditor(id){
+  if(!requireConfig()) return;
+  editingFolder = id || null;
+  const isEdit = !!id;
+  $('#folderTitle').textContent = isEdit ? '編輯資料夾' : '新增資料夾';
+  $('#folderSub').textContent = isEdit
+    ? '改名不會影響裡面的檔案。'
+    : '資料夾可以放任何類型的檔案,圖片、PDF、Word 都能放在一起。';
+  $('#folderName').value = isEdit ? folderName(id) : '';
+  $('#folderSave').textContent = isEdit ? '儲存' : '建立';
+  $('#folderDelete').classList.toggle('hidden', !isEdit);
+  $('#folderDelHint').classList.toggle('hidden', !isEdit);
+  $('#folderOverlay').classList.add('open');
+  setTimeout(()=>$('#folderName').focus(), 250);
+}
+function closeFolderEditor(){ $('#folderOverlay').classList.remove('open'); editingFolder=null; }
+
+async function saveFolder(){
+  const name = $('#folderName').value.trim();
+  if(!name){ toast('err','請輸入資料夾名稱'); return; }
+  if(name.length>20){ toast('err','名稱請控制在 20 字以內'); return; }
+  const dup = (idx.folders||[]).some(f=>f.name===name && f.id!==editingFolder);
+  if(dup){ toast('err',`已經有一個叫「${name}」的資料夾了`); return; }
+  const btn=$('#folderSave'); const prev=btn.textContent;
+  btn.textContent='儲存中…'; btn.disabled=true;
+  const id = editingFolder || crypto.randomUUID();
+  const isNew = !editingFolder;
+  try{
+    await mutateIndex(x=>{
+      if(!Array.isArray(x.folders)) x.folders=[];
+      const f = x.folders.find(y=>y.id===id);
+      if(f) f.name = name; else x.folders.push({id, name});
+    });
+    closeFolderEditor();
+    if(isNew) activeFolder = id;      // 建完直接跳進去,接著上傳就會歸這裡
+    render();
+    toast('ok', isNew ? `已建立資料夾「${name}」` : `已改名為「${name}」`);
+  }catch(e){
+    toast('err', e.decrypt ? e.message : `儲存失敗:${e.message}`);
+  }finally{ btn.textContent=prev; btn.disabled=false; }
+}
+
+async function removeFolder(){
+  const id = editingFolder; if(!id) return;
+  const name = folderName(id);
+  const inside = idx.files.filter(f=>f.folder===id).length;
+  const msg = inside
+    ? `刪除資料夾「${name}」?\n\n裡面的 ${inside} 個檔案不會被刪除,會回到「未分類」。`
+    : `刪除資料夾「${name}」?`;
+  if(!confirm(msg)) return;
+  const btn=$('#folderDelete'); btn.disabled=true; btn.textContent='刪除中…';
+  try{
+    await mutateIndex(x=>{
+      x.folders = (x.folders||[]).filter(f=>f.id!==id);
+      x.files.forEach(f=>{ if(f.folder===id) f.folder=''; });
+    });
+    if(activeFolder===id) activeFolder='';
+    closeFolderEditor(); render();
+    toast('ok', inside ? `已刪除「${name}」,${inside} 個檔案回到未分類` : `已刪除「${name}」`);
+  }catch(e){
+    toast('err', e.decrypt ? e.message : `刪除失敗:${e.message}`);
+  }finally{ btn.disabled=false; btn.textContent='🗑️ 刪除這個資料夾'; }
+}
+
+function renderFolders(){
+  const strip=$('#folderStrip');
+  strip.innerHTML='';
+  if(searchQuery) return;                       // 搜尋時跨全部,不顯示資料夾列
+  const folders = idx.folders||[];
+  const unfiled = folderCount('none');
+  // 沒有任何資料夾且沒東西可分類時,只顯示一顆「新增」引導
+  const chips=[];
+  if(folders.length){
+    chips.push({id:'', label:'全部', n:null});
+    if(unfiled) chips.push({id:'none', label:'未分類', n:unfiled});
+    folders.forEach(f=>chips.push({id:f.id, label:'📁 '+f.name, n:folderCount(f.id), editable:true}));
+  }
+  chips.push({id:'__add', label:'＋ 新資料夾'});
+  chips.forEach(c=>{
+    const b=document.createElement('button');
+    if(c.id==='__add'){
+      b.className='fchip add'; b.textContent=c.label;
+      b.addEventListener('click', ()=>openFolderEditor(null));
+    }else{
+      const on = activeFolder===c.id;
+      b.className='fchip'+(on?' on':'');
+      b.innerHTML = `<span>${esc(c.label)}</span>`
+        + (c.n!=null ? `<span class="n">${c.n}</span>` : '')
+        + (on && c.editable ? `<span class="edit">${pencilSVG()}</span>` : '');
+      b.addEventListener('click', ev=>{
+        if(on && c.editable && ev.target.closest('.edit')){ openFolderEditor(c.id); return; }
+        activeFolder = c.id; render();
+      });
+    }
+    strip.appendChild(b);
+  });
+}
+function pencilSVG(){ return `<svg viewBox="0 0 24 24" fill="none"><path d="M4 20h4L20 8l-4-4L4 16v4z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>`; }
 
 /* ============ 文字筆記 ============ */
 /* 內容直接存在 index.enc 的 f.text(索引整份加密),不佔用 data/ 空間,
@@ -1032,7 +1203,7 @@ async function saveNote(){
   const btn=$('#noteSave'); const prev=btn.textContent;
   btn.textContent='上傳中…'; btn.disabled=true;
   const entry = {id:crypto.randomUUID(), name:noteTitle(text), category:'text',
-                 size, time:Date.now(), text};
+                 size, time:Date.now(), text, folder:targetFolder()};
   try{
     await mutateIndex(x => { if(!x.files.some(f=>f.id===entry.id)) x.files.push(entry); });
     if(seenIds){ seenIds.add(entry.id); saveSeen(); }
@@ -1169,6 +1340,7 @@ async function refresh(showToast){
 
 /* ============ 畫面 ============ */
 let activeCat = 'recent';
+let activeFolder = '';        // '' = 全部 / 'none' = 只看未分類 / 其他 = 資料夾 id
 let searchQuery = '';
 const $ = s => document.querySelector(s);
 const listEl=$('#list'), emptyEl=$('#empty'), secTitle=$('#secTitle'), countPill=$('#countPill');
@@ -1180,7 +1352,13 @@ function fmtTime(t){
   if(d<day) return Math.floor(d/h)+' 小時前'; if(d<day*7) return Math.floor(d/day)+' 天前';
   const dt=new Date(t); return `${dt.getMonth()+1}/${dt.getDate()}`;
 }
-function catCount(c){ return c==='recent' ? idx.files.length : idx.files.filter(f=>f.category===c).length; }
+/* 分頁上的數字要跟著目前的資料夾走,不然進資料夾後數字跟看到的對不起來 */
+function catCount(c){
+  return idx.files.filter(f =>
+    (c==='recent' || f.category===c) &&
+    (activeFolder==='none' ? !f.folder : activeFolder ? f.folder===activeFolder : true)
+  ).length;
+}
 
 function render(){
   // 上傳格子只在「最近」分頁顯示
@@ -1189,6 +1367,7 @@ function render(){
   // 「＋ 貼上文字」只在文字分頁顯示
   $('#noteAdd').classList.toggle('show', activeCat==='text' && !searching);
   renderBatch();
+  renderFolders();
   // 正在看的分類 → 該分類檔案標記為已讀
   if(!searching) markCatSeen(activeCat);
   // tabs:badge=未讀數(點開即消),cnt=固定總數
@@ -1214,8 +1393,14 @@ function render(){
     secTitle.textContent = `🔍 「${searchQuery}」`;
   }else{
     if(activeCat!=='recent') items = items.filter(f=>f.category===activeCat);
+    // 資料夾篩選:'' = 全部都看得到,'none' = 只看未分類
+    if(activeFolder==='none') items = items.filter(f=>!f.folder);
+    else if(activeFolder) items = items.filter(f=>f.folder===activeFolder);
     ups = [...uploading.entries()].filter(([id,u])=> activeCat==='recent'||u.category===activeCat);
-    secTitle.textContent = activeCat==='recent' ? '🕐 最近' : CATS[activeCat].label;
+    const catLabel = activeCat==='recent' ? '🕐 最近' : CATS[activeCat].label;
+    secTitle.textContent = activeFolder==='none' ? `${catLabel} · 未分類`
+      : activeFolder ? `${catLabel} · 📁 ${folderName(activeFolder)}`
+      : catLabel;
   }
   countPill.textContent = `${items.length + ups.length} 個檔案`;
 
@@ -1238,6 +1423,9 @@ function render(){
   // stored cards
   for(const f of items){
     const el=document.createElement('div'); el.className='card';
+    // 在「全部」時標出檔案屬於哪個資料夾;已經進到資料夾裡就不用再標
+    const tag = (!activeFolder && f.folder)
+      ? `<span class="dot"></span><span class="infolder">📁 ${esc(folderName(f.folder))}</span>` : '';
     // 文字筆記:標題 + 內容預覽,操作鍵是「複製 / 刪除」(沒有實體檔可下載)
     if(f.category==='text'){
       el.innerHTML = `
@@ -1245,7 +1433,7 @@ function render(){
           <div class="ftype" style="background:${catColor('text')}">${typeIconSVG('text',f.name)}</div>
           <div class="finfo">
             <div class="fname">${esc(f.name)}</div>
-            <div class="fmeta"><span class="fprev">${esc(notePreview(f.text||''))}</span><span class="dot"></span><span>${fmtTime(f.time)}</span><span class="tap-open">開啟 ›</span></div>
+            <div class="fmeta"><span class="fprev">${esc(notePreview(f.text||''))}</span>${tag}<span class="dot"></span><span>${fmtTime(f.time)}</span><span class="tap-open">開啟 ›</span></div>
           </div>
         </div>
         <div class="fbtns">
@@ -1271,7 +1459,7 @@ function render(){
         ${icon}
         <div class="finfo">
           <div class="fname">${esc(f.name)}</div>
-          <div class="fmeta"><span>${fmtSize(f.size)}</span><span class="dot"></span><span>${fmtTime(f.time)}</span><span class="tap-open">開啟 ›</span></div>
+          <div class="fmeta"><span>${fmtSize(f.size)}</span>${tag}<span class="dot"></span><span>${fmtTime(f.time)}</span><span class="tap-open">開啟 ›</span></div>
         </div>
       </div>
       <div class="fbtns">
@@ -1290,6 +1478,9 @@ function render(){
     if(!isConfigured()){ $('#emptyTitle').textContent='先完成設定'; $('#emptyDesc').textContent='點右上角齒輪,填入 GitHub 帳號、私人庫、金鑰與加密密碼'; }
     else if(searching){ $('#emptyTitle').textContent='找不到符合的檔案'; $('#emptyDesc').textContent=`沒有名稱包含「${searchQuery}」的檔案`; }
     else if(loading){ $('#emptyTitle').textContent='載入中…'; $('#emptyDesc').textContent='正在讀取雲端清單'; }
+    else if(activeFolder && activeFolder!=='none'){
+      $('#emptyTitle').textContent=`「${folderName(activeFolder)}」是空的`;
+      $('#emptyDesc').textContent='停在這個資料夾上傳,檔案就會自動歸進來'; }
     else if(activeCat==='text'){ $('#emptyTitle').textContent='還沒有文字';
            $('#emptyDesc').textContent='點上方「＋ 貼上文字」,把網址或一段話傳到另一台裝置'; }
     else { $('#emptyTitle').textContent = activeCat==='recent'?'還沒有檔案':`沒有${CATS[activeCat].label.replace(/^\S+\s/,'')}檔案`;
@@ -1517,6 +1708,13 @@ function clearSearch(){ if(searchQuery||searchInput.value){ searchInput.value=''
 
 document.querySelectorAll('.tab').forEach(t=> t.addEventListener('click', ()=>{ clearSearch(); activeCat=t.dataset.cat; render(); }));
 $('#btnRefreshTop').addEventListener('click', ()=>refresh(true));
+
+/* ============ 資料夾事件 ============ */
+$('#folderCancel').addEventListener('click', closeFolderEditor);
+$('#folderSave').addEventListener('click', saveFolder);
+$('#folderDelete').addEventListener('click', removeFolder);
+$('#folderName').addEventListener('keydown', e=>{ if(e.key==='Enter') saveFolder(); });
+$('#folderOverlay').addEventListener('click', e=>{ if(e.target.id==='folderOverlay') closeFolderEditor(); });
 
 /* ============ 文字筆記事件 ============ */
 $('#noteAdd').addEventListener('click', openNoteEditor);
