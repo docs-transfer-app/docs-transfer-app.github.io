@@ -98,38 +98,11 @@
   .s-clear:hover{background:color-mix(in srgb,var(--danger) 30%,var(--border))}
   .s-clear svg{width:12px;height:12px}
 
-  /* Upload zone (compact) */
-  .drop{
-    display:flex; align-items:center; gap:13px;
-    border:1.5px dashed color-mix(in srgb,var(--accent) 45%,var(--border));
-    border-radius:16px; background:var(--surface2);
-    padding:12px 15px; cursor:pointer;
-    transition:border-color .2s,background .2s,transform .12s; margin-bottom:16px;
-  }
-  .drop:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 5%,var(--surface))}
-  .drop.drag{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--surface));transform:scale(1.01)}
+  /* 「＋ 貼上文字」用到(上傳格子已改成左上角的面板) */
   .drop-ico{width:40px;height:40px;border-radius:11px;background:var(--grad);flex:0 0 auto;
     display:grid;place-items:center;box-shadow:0 6px 16px rgba(61,139,240,.35)}
   .drop-ico svg{width:20px;height:20px}
   .drop-txt{min-width:0}
-  .drop b{display:block;font-size:14.5px;font-weight:650}
-  .drop small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
-  .drop{margin-bottom:9px}
-
-  /* 從相簿選多張(手機上通用選擇器會先問「拍照/照片圖庫/瀏覽」,這顆直接進相簿) */
-  .photo-btn{
-    display:flex; align-items:center; gap:13px; width:100%; text-align:left;
-    border:1.5px dashed color-mix(in srgb,var(--c-image) 45%,var(--border));
-    border-radius:16px; background:var(--surface2);
-    padding:12px 15px; cursor:pointer; margin-bottom:16px;
-    transition:border-color .2s,background .2s,transform .12s;
-  }
-  .photo-btn:hover{border-color:var(--c-image);background:color-mix(in srgb,var(--c-image) 6%,var(--surface))}
-  .photo-btn:active{transform:scale(.99)}
-  .photo-btn .drop-ico{background:linear-gradient(135deg,#c084fc,#a855f7);
-    box-shadow:0 6px 16px rgba(168,85,247,.35)}
-  .photo-btn b{display:block;font-size:14.5px;font-weight:650;color:var(--text)}
-  .photo-btn small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
 
   /* 整批上傳總進度 */
   .batch-bar{background:var(--surface);border:1px solid var(--border);border-radius:14px;
@@ -230,10 +203,15 @@
   .card.picked{border-color:var(--accent);
     box-shadow:0 0 0 1px var(--accent),var(--shadow)}
   /* 底部批次操作列(浮在導覽列上方) */
+  /* 收起時一定要同時 visibility:hidden + pointer-events:none。
+     只靠 translateY 推不出畫面(它本來就浮在距底部 88px 處),會卡在導覽列上方 */
   .selbar{position:fixed;left:0;right:0;z-index:31;max-width:520px;margin-inline:auto;
     bottom:calc(88px + env(safe-area-inset-bottom));padding:0 16px;
-    display:flex;gap:8px;transform:translateY(140%);transition:transform .26s cubic-bezier(.32,.72,0,1)}
-  .selbar.open{transform:none}
+    display:flex;gap:8px;
+    opacity:0;visibility:hidden;pointer-events:none;transform:translateY(24px);
+    transition:transform .26s cubic-bezier(.32,.72,0,1),opacity .2s,visibility 0s .26s}
+  .selbar.open{opacity:1;visibility:visible;pointer-events:auto;transform:none;
+    transition:transform .26s cubic-bezier(.32,.72,0,1),opacity .2s,visibility 0s}
   .selbar-inner{display:flex;gap:7px;width:100%;background:var(--surface);
     border:1px solid var(--border);border-radius:16px;padding:8px;box-shadow:var(--shadow-lg)}
   .selbar button{flex:1;min-width:0;border:none;border-radius:11px;padding:11px 4px;cursor:pointer;
@@ -244,6 +222,31 @@
   .selbar button svg{width:17px;height:17px}
   .selbar button:disabled{opacity:.4;pointer-events:none}
   .selbar button.danger{color:var(--danger)}
+
+  /* 上傳選擇面板 */
+  .up-opt{display:flex;align-items:center;gap:13px;width:100%;text-align:left;cursor:pointer;
+    background:var(--surface2);border:1px solid var(--border);border-radius:15px;
+    padding:14px;margin-bottom:10px;color:var(--text);
+    transition:transform .12s,background .2s,border-color .2s}
+  .up-opt:active{transform:scale(.98)}
+  .up-opt:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 6%,var(--surface))}
+  .up-ico{width:44px;height:44px;border-radius:13px;flex:0 0 auto;display:grid;place-items:center}
+  .up-ico svg{width:22px;height:22px}
+  .up-ico.photo{background:linear-gradient(135deg,#c084fc,#a855f7);box-shadow:0 6px 16px rgba(168,85,247,.35)}
+  .up-ico.file{background:var(--grad);box-shadow:0 6px 16px rgba(61,139,240,.35)}
+  .up-txt b{display:block;font-size:15px;font-weight:650}
+  .up-txt small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+
+  /* 桌機:拖曳檔案到頁面任何地方 */
+  .dropmask{position:fixed;inset:0;z-index:80;display:none;place-items:center;
+    background:color-mix(in srgb,var(--accent) 16%,rgba(10,14,22,.7));
+    backdrop-filter:blur(3px)}
+  .dropmask.on{display:grid}
+  .dm-box{background:var(--surface);border:2px dashed var(--accent);border-radius:22px;
+    padding:30px 40px;text-align:center;color:var(--accent);box-shadow:var(--shadow-lg)}
+  .dm-box svg{width:40px;height:40px;margin-bottom:8px}
+  .dm-box b{display:block;font-size:16px}
+  .dm-box small{display:block;color:var(--muted);font-size:12px;margin-top:4px}
 
   /* Section label */
   .sec-head{display:flex;align-items:center;justify-content:space-between;margin:2px 4px 12px;gap:8px}
@@ -445,13 +448,13 @@
 <body>
 <div class="app">
   <header>
-    <button class="brand" id="brandUpload" title="從相簿選多張照片">
+    <button class="brand" id="brandUpload" title="上傳檔案">
       <span class="logo" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="#fff" stroke-width="2"/><circle cx="8.5" cy="10" r="1.5" fill="#fff"/><path d="M21 16l-5-5-7 7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5l5 5M4 20h16" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </span>
       <span class="title">
-        <span class="brand-name">從相簿選照片</span>
-        <span class="brand-sub">＋ 可一次選多張</span>
+        <span class="brand-name">上傳檔案</span>
+        <span class="brand-sub">＋ 照片、PDF、Word 都可以</span>
       </span>
     </button>
     <div class="header-spacer"></div>
@@ -471,28 +474,8 @@
         <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
       </button>
     </div>
-    <div id="uploadZone">
-      <div class="drop" id="drop">
-        <input type="file" id="fileInput" multiple class="hidden" />
-        <div class="drop-ico">
-          <svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5l5 5M4 20h16" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
-        <div class="drop-txt">
-          <b>上傳檔案</b>
-          <small>點此選擇或拖曳 · 上傳前自動加密 🔒</small>
-        </div>
-      </div>
-      <button class="photo-btn" id="photoBtn">
-        <span class="drop-ico">
-          <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="#fff" stroke-width="2"/><circle cx="8.5" cy="10" r="1.5" fill="#fff"/><path d="M21 16l-5-5-7 7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </span>
-        <span class="drop-txt">
-          <b>從相簿選多張照片</b>
-          <small>可一次選 10、20 張 · 同時上傳比較快</small>
-        </span>
-      </button>
-      <input type="file" id="photoInput" accept="image/*" multiple class="hidden" />
-    </div>
+    <input type="file" id="fileInput" multiple class="hidden" />
+    <input type="file" id="photoInput" accept="image/*" multiple class="hidden" />
 
     <div class="batch-bar hidden" id="batchBar">
       <div class="bb-top">
@@ -633,6 +616,38 @@
   </div>
 </div>
 
+<!-- Upload chooser -->
+<div class="overlay" id="uploadOverlay">
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3>上傳檔案</h3>
+    <p class="sub" id="uploadSub">上傳前會在這台裝置先加密 🔒</p>
+    <button class="up-opt" id="optPhoto">
+      <span class="up-ico photo">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="#fff" stroke-width="2"/><circle cx="8.5" cy="10" r="1.5" fill="#fff"/><path d="M21 16l-5-5-7 7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="up-txt"><b>從相簿選照片</b><small>可一次選 10、20 張</small></span>
+    </button>
+    <button class="up-opt" id="optFile">
+      <span class="up-ico file">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M6 3h9l4 4v14a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="#fff" stroke-width="2" stroke-linejoin="round"/><path d="M14 3v5h5" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="up-txt"><b>選擇檔案</b><small>PDF、Word、Excel、PPT…</small></span>
+    </button>
+    <div class="note-acts">
+      <button id="uploadCancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<div class="dropmask" id="dropMask">
+  <div class="dm-box">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5l5 5M4 20h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <b>放開就開始上傳</b>
+    <small>上傳前自動加密 🔒</small>
+  </div>
+</div>
+
 <!-- Move to folder -->
 <div class="overlay" id="moveOverlay">
   <div class="sheet">
@@ -717,7 +732,7 @@
 <div class="toasts" id="toasts"></div>
 
 <script>
-const APP_VERSION = 'v21';  /* 每次改版就 +1,方便確認有更新到 */
+const APP_VERSION = 'v22';  /* 每次改版就 +1,方便確認有更新到 */
 
 /* ============ 設定 (localStorage) ============ */
 const CFG_KEY = 'cft.config.v1';
@@ -1218,6 +1233,88 @@ function renderFolders(){
 }
 function pencilSVG(){ return `<svg viewBox="0 0 24 24" fill="none"><path d="M4 20h4L20 8l-4-4L4 16v4z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>`; }
 
+/* ============ ZIP 打包(store,不壓縮) ============
+   手機瀏覽器只允許一次下載一個檔,多選時逐檔存會被擋掉,
+   所以多檔改成打包成單一 zip。照片本來就是壓縮格式,不壓縮不影響大小,
+   而且不用引入外部套件(公司網路只通 GitHub)。 */
+let crcTable = null;
+function crc32(buf){
+  if(!crcTable){
+    crcTable = new Uint32Array(256);
+    for(let n=0;n<256;n++){
+      let c=n;
+      for(let k=0;k<8;k++) c = (c&1) ? (0xEDB88320 ^ (c>>>1)) : (c>>>1);
+      crcTable[n]=c>>>0;
+    }
+  }
+  let crc = 0xFFFFFFFF;
+  for(let i=0;i<buf.length;i++) crc = crcTable[(crc ^ buf[i]) & 0xFF] ^ (crc>>>8);
+  return (crc ^ 0xFFFFFFFF)>>>0;
+}
+function dosDateTime(d){
+  return {
+    time: ((d.getHours()&31)<<11) | ((d.getMinutes()&63)<<5) | ((d.getSeconds()/2)&31),
+    date: (((d.getFullYear()-1980)&127)<<9) | (((d.getMonth()+1)&15)<<5) | (d.getDate()&31),
+  };
+}
+/* 同名檔案加上 (2)(3),否則解壓縮時會互相覆蓋 */
+function uniqueZipName(name, used){
+  if(!used.has(name)){ used.add(name); return name; }
+  const dot = name.lastIndexOf('.');
+  const base = dot>0 ? name.slice(0,dot) : name;
+  const ext  = dot>0 ? name.slice(dot) : '';
+  let i=2, n;
+  do { n = `${base} (${i++})${ext}`; } while(used.has(n));
+  used.add(n); return n;
+}
+/* parts: [{name, bytes:Uint8Array}] — 呼叫端每加一個就把 bytes 換成 Blob 以免佔住記憶體 */
+function zipBuilder(){
+  const enc = new TextEncoder();
+  const body=[], central=[], used=new Set();
+  let offset=0, count=0;
+  const dt = dosDateTime(new Date());
+  return {
+    add(name, bytes){
+      const nm = enc.encode(uniqueZipName(name, used));
+      const crc = crc32(bytes), size = bytes.length;
+      const lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true);
+      lh.setUint16(6, 0x0800, true);      // 檔名用 UTF-8
+      lh.setUint16(8, 0, true);           // 0 = store
+      lh.setUint16(10, dt.time, true); lh.setUint16(12, dt.date, true);
+      lh.setUint32(14, crc, true); lh.setUint32(18, size, true); lh.setUint32(22, size, true);
+      lh.setUint16(26, nm.length, true); lh.setUint16(28, 0, true);
+      // 立刻轉成 Blob,讓瀏覽器有機會把資料移出 JS 記憶體
+      body.push(new Blob([new Uint8Array(lh.buffer), nm, bytes]));
+      const ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true);
+      ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+      ch.setUint16(12, dt.time, true); ch.setUint16(14, dt.date, true);
+      ch.setUint32(16, crc, true); ch.setUint32(20, size, true); ch.setUint32(24, size, true);
+      ch.setUint16(28, nm.length, true); ch.setUint16(30, 0, true); ch.setUint16(32, 0, true);
+      ch.setUint16(34, 0, true); ch.setUint16(36, 0, true); ch.setUint32(38, 0, true);
+      ch.setUint32(42, offset, true);
+      central.push(new Uint8Array(ch.buffer), nm);
+      offset += 30 + nm.length + size;
+      count++;
+    },
+    finish(){
+      const cdSize = central.reduce((s,c)=>s+c.length, 0);
+      const eo = new DataView(new ArrayBuffer(22));
+      eo.setUint32(0, 0x06054b50, true);
+      eo.setUint16(8, count, true); eo.setUint16(10, count, true);
+      eo.setUint32(12, cdSize, true); eo.setUint32(16, offset, true);
+      eo.setUint16(20, 0, true);
+      return new Blob([...body, ...central, new Uint8Array(eo.buffer)], {type:'application/zip'});
+    },
+    get count(){ return count; },
+  };
+}
+function zipFileName(){
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return `資料傳輸_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.zip`;
+}
+
 /* ============ 多選批次 ============ */
 let selectMode = false;
 let selected = new Set();
@@ -1260,29 +1357,57 @@ function renderSelBar(){
   }
 }
 
-/* 逐一下載。手機瀏覽器通常只允許第一個下載,其餘可能被擋,
-   所以中間留間隔並回報實際完成數,讓使用者看得出來有沒有被擋 */
+/* 取出單一項目的解密位元組(文字筆記沒有實體檔,直接用內容) */
+async function entryBytes(f){
+  if(f.category==='text') return te.encode(f.text||'');
+  const blob = await fetchDecrypted(f);
+  return new Uint8Array(await blob.arrayBuffer());
+}
+function entryDownloadName(f){ return f.category==='text' ? f.name+'.txt' : f.name; }
+
+/* 只選一個 → 直接下載(保留原檔名)。選多個 → 打包成一個 zip,
+   因為手機瀏覽器只讓你一次存一個檔,逐檔下載會被擋掉 */
 async function batchDownload(){
   const list = pickedEntries();
   if(!list.length || batchBusy) return;
   batchBusy=true; renderSelBar();
-  let ok=0, bad=0;
-  for(let i=0;i<list.length;i++){
-    const f=list[i];
-    $('#selDownloadTxt').textContent = `下載中 ${i+1}/${list.length}`;
-    try{
-      if(f.category==='text'){
-        saveBlob(new Blob([f.text||''],{type:'text/plain;charset=utf-8'}), f.name+'.txt');
-      }else{
-        saveBlob(await fetchDecrypted(f), f.name);
-      }
-      ok++;
-      if(i<list.length-1) await sleep(800);   // 給瀏覽器時間處理上一個下載
-    }catch(e){ bad++; }
+  try{
+    if(list.length===1){
+      const f=list[0];
+      $('#selDownloadTxt').textContent='解密中…';
+      saveBlob(f.category==='text'
+        ? new Blob([f.text||''],{type:'text/plain;charset=utf-8'})
+        : await fetchDecrypted(f), entryDownloadName(f));
+      batchBusy=false; exitSelect();
+      toast('ok', `已解密下載 ${f.name}`);
+      return;
+    }
+    const zip = zipBuilder();
+    const failed=[];
+    for(let i=0;i<list.length;i++){
+      $('#selDownloadTxt').textContent = `打包中 ${i+1}/${list.length}`;
+      renderSelBar();
+      try{ zip.add(entryDownloadName(list[i]), await entryBytes(list[i])); }
+      catch(e){ failed.push(list[i].name); }
+    }
+    if(!zip.count){
+      batchBusy=false; renderSelBar();
+      toast('err','一個都下載不了,請檢查網路或密碼'); return;
+    }
+    $('#selDownloadTxt').textContent='產生檔案…'; renderSelBar();
+    saveBlob(zip.finish(), zipFileName());
+    batchBusy=false;
+    if(failed.length){
+      renderSelBar();
+      toast('err', `已打包 ${zip.count} 個,${failed.length} 個失敗:${failed.slice(0,2).join('、')}`);
+    }else{
+      exitSelect();
+      toast('ok', `已打包 ${zip.count} 個檔案成 zip`);
+    }
+  }catch(e){
+    batchBusy=false; renderSelBar();
+    toast('err', e.decrypt ? e.message : `下載失敗:${e.message}`);
   }
-  batchBusy=false;
-  toast(bad?'err':'ok', bad ? `下載 ${ok} 個,${bad} 個失敗` : `已解密下載 ${ok} 個`);
-  if(ok && !bad) exitSelect(); else renderSelBar();
 }
 
 function openMoveSheet(){
@@ -1565,13 +1690,12 @@ function catCount(c){
 function render(){
   // 上傳格子只在「最近」分頁顯示
   const searching = !!searchQuery;
-  $('#uploadZone').style.display = (activeCat==='recent' && !searching) ? '' : 'none';
-  // 「＋ 貼上文字」只在文字分頁顯示
+  // 「＋ 貼上文字」只在文字分頁顯示(一般上傳統一走左上角)
   $('#noteAdd').classList.toggle('show', activeCat==='text' && !searching);
   renderBatch();
   renderFolders();
   // 多選時把上傳區與資料夾列收起來,畫面專心在挑選
-  if(selectMode){ $('#uploadZone').style.display='none'; $('#noteAdd').classList.remove('show'); }
+  if(selectMode){ $('#noteAdd').classList.remove('show'); }
   // 正在看的分類 → 該分類檔案標記為已讀
   if(!searching) markCatSeen(activeCat);
   // tabs:badge=未讀數(點開即消),cnt=固定總數
@@ -1906,17 +2030,41 @@ $('#btnTest').addEventListener('click', async ()=>{
 function requireConfig(){ if(!isConfigured()){ toast('info','請先完成設定'); openSettings(); return false; } return true; }
 
 /* ============ 事件:上傳 / 拖曳 / 頁籤 ============ */
-const drop=$('#drop'), fileInput=$('#fileInput'), photoInput=$('#photoInput');
-drop.addEventListener('click', ()=> requireConfig() && fileInput.click());
-/* 左上角改成直接開相簿多選(任何分頁都能按)。一般檔案仍走「最近」分頁的上傳格子 */
-$('#brandUpload').addEventListener('click', ()=> requireConfig() && photoInput.click());
+/* 上傳:左上角一個入口,點了再選「相簿」或「檔案」。
+   相簿那顆帶 accept=image/*,手機會直接開相簿,省掉「拍照/照片圖庫/瀏覽」那一層 */
+const fileInput=$('#fileInput'), photoInput=$('#photoInput');
+function openUploadSheet(){
+  if(!requireConfig()) return;
+  const f = targetFolder();
+  $('#uploadSub').textContent = f
+    ? `會存進資料夾「${folderName(f)}」· 上傳前先在這台裝置加密 🔒`
+    : '上傳前會在這台裝置先加密 🔒';
+  $('#uploadOverlay').classList.add('open');
+}
+function closeUploadSheet(){ $('#uploadOverlay').classList.remove('open'); }
+$('#brandUpload').addEventListener('click', openUploadSheet);
+$('#optPhoto').addEventListener('click', ()=>{ closeUploadSheet(); photoInput.click(); });
+$('#optFile').addEventListener('click', ()=>{ closeUploadSheet(); fileInput.click(); });
+$('#uploadCancel').addEventListener('click', closeUploadSheet);
+$('#uploadOverlay').addEventListener('click', e=>{ if(e.target.id==='uploadOverlay') closeUploadSheet(); });
 fileInput.addEventListener('change', e=>{ handleFiles(e.target.files); fileInput.value=''; });
-/* 相簿多選:accept=image/* 讓手機直接開相簿,省掉「拍照/照片圖庫/瀏覽」那一層 */
-$('#photoBtn').addEventListener('click', ()=> requireConfig() && photoInput.click());
 photoInput.addEventListener('change', e=>{ handleFiles(e.target.files); photoInput.value=''; });
-;['dragenter','dragover'].forEach(ev=> drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.add('drag'); }));
-;['dragleave','drop'].forEach(ev=> drop.addEventListener(ev, e=>{ e.preventDefault(); if(ev==='dragleave' && drop.contains(e.relatedTarget)) return; drop.classList.remove('drag'); }));
-drop.addEventListener('drop', e=>{ if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+
+/* 桌機:拖到頁面任何地方都可以(上傳格子拿掉了,改用全頁遮罩) */
+const dropMask=$('#dropMask');
+let dragDepth=0;
+document.addEventListener('dragenter', e=>{
+  if(!e.dataTransfer || ![...e.dataTransfer.types].includes('Files')) return;
+  e.preventDefault(); dragDepth++; dropMask.classList.add('on');
+});
+document.addEventListener('dragleave', e=>{
+  e.preventDefault();
+  if(--dragDepth<=0){ dragDepth=0; dropMask.classList.remove('on'); }
+});
+document.addEventListener('drop', e=>{
+  e.preventDefault(); dragDepth=0; dropMask.classList.remove('on');
+  if(e.dataTransfer && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+});
 // allow dropping anywhere on page
 window.addEventListener('dragover', e=>e.preventDefault());
 window.addEventListener('drop', e=>e.preventDefault());
