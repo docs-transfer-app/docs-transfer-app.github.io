@@ -600,7 +600,7 @@
 <div class="toasts" id="toasts"></div>
 
 <script>
-const APP_VERSION = 'v17';  /* 每次改版就 +1,方便確認有更新到 */
+const APP_VERSION = 'v18';  /* 每次改版就 +1,方便確認有更新到 */
 
 /* ============ 設定 (localStorage) ============ */
 const CFG_KEY = 'cft.config.v1';
@@ -751,12 +751,35 @@ async function saveIndex(){
   const enc = await encBytes(te.encode(JSON.stringify(idx)));
   idxSha = await ghPut('index.enc', enc, idxSha);
 }
+/* 索引鎖:loadIndex() 會整個換掉全域的 idx 與 idxSha,
+   若在「讀出來→改→寫回去」中途被另一個 loadIndex 插隊(例如 iOS 選完照片回到 App
+   觸發的自動重新整理),寫回去時就會拿到過期的 sha,GitHub 回 409
+   「is at xxx but expected yyy」。所有碰索引的動作都要經過這把鎖。 */
+let idxLock = Promise.resolve();
+function withIndexLock(fn){
+  const run = idxLock.then(fn, fn);        // 前一個成功或失敗都要接著跑
+  idxLock = run.then(()=>{}, ()=>{});
+  return run;
+}
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
 async function mutateIndex(applyFn){
-  for(let a=0;a<3;a++){
-    await loadIndex(); applyFn(idx);
-    try{ await saveIndex(); return; }
-    catch(e){ if(e.status===409 && a<2) continue; throw e; }
-  }
+  return withIndexLock(async ()=>{
+    let last;
+    for(let a=0;a<5;a++){
+      await loadIndex(); applyFn(idx);
+      try{ await saveIndex(); return; }
+      catch(e){
+        last = e;
+        // 409/422 = 版本衝突(可能同時有另一台裝置在寫),退避後重讀重寫
+        if((e.status===409 || e.status===422) && a<4){
+          await sleep(200*(a+1) + Math.random()*250); continue;
+        }
+        throw e;
+      }
+    }
+    throw last;
+  });
 }
 
 /* ============ 分類 ============ */
@@ -862,6 +885,26 @@ function renderBatch(){
   $('#bbFill').style.width = Math.round(batch.done/batch.total*100)+'%';
 }
 
+/* 上傳檔案本體。並行上傳時每個 PUT 都是一次 commit,同時推同一個分支也可能撞 409;
+   撞到就先確認檔案是不是其實已經寫進去了(避免整張照片重傳),沒有才退避重試 */
+async function ghPutData(path, bytes, onProgress){
+  let last;
+  for(let a=0;a<3;a++){
+    try{ return await ghPutProgress(path, bytes, null, onProgress); }
+    catch(e){
+      last = e;
+      if((e.status===409 || e.status===422) && a<2){
+        const cur = await ghGetContent(path).catch(()=>null);
+        if(cur) return cur.sha;                       // 其實寫成功了
+        await sleep(300*(a+1) + Math.random()*400);
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw last;
+}
+
 async function uploadOne(id, file){
   const cat = categorize(file.name);
   const u = uploading.get(id);
@@ -871,7 +914,7 @@ async function uploadOne(id, file){
   u.status='上傳中…'; render();
   const enc = await encBytes(raw);
   const path = `data/${id}.bin`;
-  const sha = await ghPutProgress(path, enc, null, p=>{
+  const sha = await ghPutData(path, enc, p=>{
     const uu=uploading.get(id);
     if(uu && uu.pct!==p){ uu.pct=p; uu.status=`上傳中… ${p}%`; render(); }
   });
@@ -1106,7 +1149,7 @@ async function refresh(showToast){
   if(!isConfigured()){ render(); return; }
   lastRefresh=Date.now();
   loading=true; render();
-  try{ await loadIndex(); if(showToast) toast('ok','已更新'); }
+  try{ await withIndexLock(()=>loadIndex()); if(showToast) toast('ok','已更新'); }
   catch(e){ toast('err', e.decrypt ? e.message : `更新失敗:${e.message}`); }
   finally{ loading=false; render(); }
 }
@@ -1429,6 +1472,8 @@ $('#btnUpdate').addEventListener('click', ev=>forceUpdate(ev.currentTarget));
 function autoRefresh(){
   if(document.visibilityState!=='visible') return;
   if(!isConfigured()) return;
+  // 上傳中不要去重讀索引:iOS 選完照片回到 App 會觸發這裡,剛好和上傳撞在一起
+  if(activeBatches>0 || uploading.size>0 || flushing) return;
   if(Date.now()-lastRefresh < 8000) return;   // 8 秒內不重複
   refresh(false);
 }
