@@ -252,6 +252,10 @@
     transition:transform .15s,box-shadow .2s; animation:pop .3s ease both;
   }
   .card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
+  /* 長按要進選取模式,所以擋掉 iOS 自己的長按選單(拷貝/儲存影像)與選字 */
+  .card{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+  /* 按住時輕微縮小,讓使用者知道有按到 */
+  .card.holding{transform:scale(.97);box-shadow:var(--shadow)}
   @keyframes pop{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
   .ftype{width:44px;height:44px;border-radius:12px;flex:0 0 auto;display:grid;place-items:center;
     color:#fff;font-size:10px;font-weight:800;letter-spacing:.02em;position:relative;overflow:hidden}
@@ -693,7 +697,7 @@
 <div class="toasts" id="toasts"></div>
 
 <script>
-const APP_VERSION = 'v23';  /* 每次改版就 +1,方便確認有更新到 */
+const APP_VERSION = 'v24';  /* 每次改版就 +1,方便確認有更新到 */
 
 /* ============ 設定 (localStorage) ============ */
 const CFG_KEY = 'cft.config.v1';
@@ -1738,6 +1742,7 @@ function render(){
           <button class="fbtn del" title="刪除">${delSVG()}</button>
         </div>`;
       if(applyPicking(el, f)){ listEl.appendChild(el); continue; }
+      attachLongPress(el, f);
       el.querySelector('.open-area').addEventListener('click', ()=>openNoteViewer(f));
       el.querySelector('.copy').addEventListener('click', async ev=>{
         const b=ev.currentTarget;
@@ -1765,6 +1770,7 @@ function render(){
         <button class="fbtn del" title="刪除">${delSVG()}</button>
       </div>`;
     if(applyPicking(el, f)){ listEl.appendChild(el); continue; }
+    attachLongPress(el, f);
     el.querySelector('.open-area').addEventListener('click', ()=>openEntry(f));
     el.querySelector('.dl').addEventListener('click', ev=>downloadEntry(f, ev.currentTarget));
     el.querySelector('.del').addEventListener('click', ()=>{ if(confirm(`確定刪除「${f.name}」?`)) deleteEntry(f,false); });
@@ -1802,6 +1808,41 @@ function applyPicking(el, f){
   return true;
 }
 function checkSVG(){ return `<svg viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L19 7" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`; }
+
+/* 長按卡片 → 進入選取模式並直接勾起這一個 */
+const LONG_PRESS_MS = 500;      // iOS 系統長按也是約 0.5 秒
+let suppressClickUntil = 0;     // 長按觸發後,把緊接著的那個 click 吃掉
+function attachLongPress(el, f){
+  let timer=null, sx=0, sy=0;
+  const cancel = ()=>{ if(timer){ clearTimeout(timer); timer=null; } el.classList.remove('holding'); };
+  const start = (x,y,target)=>{
+    // 按在右邊的下載/刪除鍵上不算長按,否則按久一點會誤觸選取模式
+    if(target && target.closest && target.closest('.fbtns')) return;
+    cancel(); sx=x; sy=y;
+    el.classList.add('holding');
+    timer = setTimeout(()=>{
+      timer=null;
+      suppressClickUntil = Date.now() + 500;
+      if(navigator.vibrate) navigator.vibrate(12);   // Android 有震動,iOS 無聲通過
+      selectMode = true;
+      selected = new Set([f.id]);
+      render();                                     // 這一行之後 el 已經被重畫掉了
+    }, LONG_PRESS_MS);
+  };
+  el.addEventListener('touchstart', e=>{ const t=e.touches[0]; start(t.clientX, t.clientY, e.target); }, {passive:true});
+  el.addEventListener('touchmove', e=>{ const t=e.touches[0];
+    if(Math.abs(t.clientX-sx)>10 || Math.abs(t.clientY-sy)>10) cancel(); }, {passive:true});
+  el.addEventListener('touchend', cancel);
+  el.addEventListener('touchcancel', cancel);
+  el.addEventListener('mousedown', e=>{ if(e.button===0) start(e.clientX, e.clientY, e.target); });
+  el.addEventListener('mouseup', cancel);
+  el.addEventListener('mouseleave', cancel);
+}
+/* 長按放開時瀏覽器仍會補送一個 click,若不擋掉會順手開啟檔案或把剛勾的取消掉。
+   卡片是重畫過的新元素,所以只能在 document 這層用時間窗攔截。 */
+document.addEventListener('click', e=>{
+  if(Date.now() < suppressClickUntil){ e.preventDefault(); e.stopPropagation(); }
+}, true);
 
 /* SVG helpers */
 function typeIconSVG(cat,name){
