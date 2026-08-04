@@ -200,12 +200,53 @@
   .fchip .edit{display:grid;place-items:center;width:18px;height:18px;margin-right:-4px;
     border-radius:50%;background:rgba(255,255,255,.25)}
   .fchip .edit svg{width:11px;height:11px}
+  /* 移動目的地清單 */
+  .move-item{display:flex;align-items:center;gap:11px;width:100%;text-align:left;cursor:pointer;
+    background:var(--surface2);border:1px solid var(--border);border-radius:13px;
+    padding:13px 14px;margin-bottom:8px;color:var(--text);font-size:14.5px;font-weight:600;
+    transition:transform .12s,background .2s,border-color .2s}
+  .move-item:active{transform:scale(.98)}
+  .move-item:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--surface))}
+  .move-item .mi-n{margin-left:auto;color:var(--muted);font-size:11.5px;font-weight:700}
+  .move-item.cur{border-color:var(--accent);color:var(--accent)}
   /* 卡片上顯示所屬資料夾 */
   .finfo .fmeta .infolder{color:var(--accent);font-weight:650;flex:0 0 auto;
     max-width:96px;overflow:hidden;text-overflow:ellipsis}
 
+  /* 多選模式 */
+  .sec-right{display:flex;align-items:center;gap:7px}
+  .sel-btn{border:1px solid var(--border);background:var(--surface);color:var(--accent);
+    font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:999px;cursor:pointer;
+    transition:transform .12s,background .2s}
+  .sel-btn:active{transform:scale(.93)}
+  .sel-btn.cancel{color:var(--muted)}
+  .card .chk{flex:0 0 auto;width:22px;height:22px;border-radius:50%;
+    border:2px solid var(--border);display:grid;place-items:center;
+    transition:background .18s,border-color .18s}
+  .card .chk svg{width:13px;height:13px;opacity:0;transition:opacity .15s}
+  .card.picked .chk{background:var(--accent);border-color:var(--accent)}
+  .card.picked .chk svg{opacity:1}
+  .card.picking{cursor:pointer}
+  .card.picked{border-color:var(--accent);
+    box-shadow:0 0 0 1px var(--accent),var(--shadow)}
+  /* 底部批次操作列(浮在導覽列上方) */
+  .selbar{position:fixed;left:0;right:0;z-index:31;max-width:520px;margin-inline:auto;
+    bottom:calc(88px + env(safe-area-inset-bottom));padding:0 16px;
+    display:flex;gap:8px;transform:translateY(140%);transition:transform .26s cubic-bezier(.32,.72,0,1)}
+  .selbar.open{transform:none}
+  .selbar-inner{display:flex;gap:7px;width:100%;background:var(--surface);
+    border:1px solid var(--border);border-radius:16px;padding:8px;box-shadow:var(--shadow-lg)}
+  .selbar button{flex:1;min-width:0;border:none;border-radius:11px;padding:11px 4px;cursor:pointer;
+    background:var(--surface2);color:var(--text);font-size:12.5px;font-weight:700;
+    display:flex;flex-direction:column;align-items:center;gap:3px;
+    transition:transform .12s,background .2s,color .2s}
+  .selbar button:active{transform:scale(.94)}
+  .selbar button svg{width:17px;height:17px}
+  .selbar button:disabled{opacity:.4;pointer-events:none}
+  .selbar button.danger{color:var(--danger)}
+
   /* Section label */
-  .sec-head{display:flex;align-items:center;justify-content:space-between;margin:2px 4px 12px}
+  .sec-head{display:flex;align-items:center;justify-content:space-between;margin:2px 4px 12px;gap:8px}
   .sec-head h2{font-size:14px;font-weight:700;margin:0;display:flex;align-items:center;gap:7px}
   .count-pill{font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--border);
     padding:2px 9px;border-radius:999px}
@@ -404,13 +445,13 @@
 <body>
 <div class="app">
   <header>
-    <button class="brand" id="brandUpload" title="點此上傳檔案">
+    <button class="brand" id="brandUpload" title="從相簿選多張照片">
       <span class="logo" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5l5 5M4 20h16" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="#fff" stroke-width="2"/><circle cx="8.5" cy="10" r="1.5" fill="#fff"/><path d="M21 16l-5-5-7 7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </span>
       <span class="title">
-        <span class="brand-name">資料傳輸</span>
-        <span class="brand-sub">＋ 點這裡上傳檔案</span>
+        <span class="brand-name">從相簿選照片</span>
+        <span class="brand-sub">＋ 可一次選多張</span>
       </span>
     </button>
     <div class="header-spacer"></div>
@@ -475,7 +516,12 @@
 
     <div class="sec-head">
       <h2 id="secTitle">🕐 最近</h2>
-      <span class="count-pill" id="countPill">0 個檔案</span>
+      <div class="sec-right">
+        <span class="count-pill" id="countPill">0 個檔案</span>
+        <button class="sel-btn" id="btnSelect">選取</button>
+        <button class="sel-btn hidden" id="btnSelectAll">全選</button>
+        <button class="sel-btn cancel hidden" id="btnSelectCancel">取消</button>
+      </div>
     </div>
 
     <div class="list" id="list"></div>
@@ -488,6 +534,14 @@
       <small id="emptyDesc">從上方上傳,或在另一台裝置傳送後按重新整理</small>
     </div>
   </main>
+
+  <div class="selbar" id="selBar">
+    <div class="selbar-inner">
+      <button id="selDownload"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="selDownloadTxt">下載</span></button>
+      <button id="selMove"><svg viewBox="0 0 24 24" fill="none"><path d="M3 7a1 1 0 011-1h5l2 2h9a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span id="selMoveTxt">移到資料夾</span></button>
+      <button class="danger" id="selDelete"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m2 0v13a1 1 0 01-1 1H8a1 1 0 01-1-1V7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="selDeleteTxt">刪除</span></button>
+    </div>
+  </div>
 
   <nav id="nav">
     <button class="tab active" data-cat="recent">
@@ -579,6 +633,19 @@
   </div>
 </div>
 
+<!-- Move to folder -->
+<div class="overlay" id="moveOverlay">
+  <div class="sheet">
+    <div class="grab"></div>
+    <h3 id="moveTitle">移到資料夾</h3>
+    <p class="sub" id="moveSub"></p>
+    <div id="moveList"></div>
+    <div class="note-acts">
+      <button id="moveCancel">取消</button>
+    </div>
+  </div>
+</div>
+
 <!-- Folder editor -->
 <div class="overlay" id="folderOverlay">
   <div class="sheet">
@@ -650,7 +717,7 @@
 <div class="toasts" id="toasts"></div>
 
 <script>
-const APP_VERSION = 'v20';  /* 每次改版就 +1,方便確認有更新到 */
+const APP_VERSION = 'v21';  /* 每次改版就 +1,方便確認有更新到 */
 
 /* ============ 設定 (localStorage) ============ */
 const CFG_KEY = 'cft.config.v1';
@@ -1151,6 +1218,141 @@ function renderFolders(){
 }
 function pencilSVG(){ return `<svg viewBox="0 0 24 24" fill="none"><path d="M4 20h4L20 8l-4-4L4 16v4z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>`; }
 
+/* ============ 多選批次 ============ */
+let selectMode = false;
+let selected = new Set();
+let batchBusy = false;          // 批次動作進行中,避免重複觸發
+
+function enterSelect(){ selectMode=true; selected.clear(); render(); }
+function exitSelect(){ selectMode=false; selected.clear(); render(); }
+function togglePick(id){
+  if(selected.has(id)) selected.delete(id); else selected.add(id);
+  render();
+}
+/* 目前畫面上看得到的項目(全選只針對看得到的,不會偷偷選到別的分類/資料夾) */
+let visibleItems = [];
+function selectAllVisible(){
+  const allOn = visibleItems.length>0 && visibleItems.every(f=>selected.has(f.id));
+  if(allOn) selected.clear();
+  else visibleItems.forEach(f=>selected.add(f.id));
+  render();
+}
+function pickedEntries(){ return idx.files.filter(f=>selected.has(f.id)); }
+
+function renderSelBar(){
+  const bar=$('#selBar');
+  bar.classList.toggle('open', selectMode);
+  const n = selected.size;
+  $('#selDownload').disabled = n===0 || batchBusy;
+  $('#selMove').disabled = n===0 || batchBusy;
+  $('#selDelete').disabled = n===0 || batchBusy;
+  if(!batchBusy){
+    $('#selDownloadTxt').textContent = n ? `下載 ${n}` : '下載';
+    $('#selMoveTxt').textContent = '移到資料夾';
+    $('#selDeleteTxt').textContent = n ? `刪除 ${n}` : '刪除';
+  }
+  $('#btnSelect').classList.toggle('hidden', selectMode);
+  $('#btnSelectAll').classList.toggle('hidden', !selectMode);
+  $('#btnSelectCancel').classList.toggle('hidden', !selectMode);
+  if(selectMode){
+    const allOn = visibleItems.length>0 && visibleItems.every(f=>selected.has(f.id));
+    $('#btnSelectAll').textContent = allOn ? '取消全選' : '全選';
+  }
+}
+
+/* 逐一下載。手機瀏覽器通常只允許第一個下載,其餘可能被擋,
+   所以中間留間隔並回報實際完成數,讓使用者看得出來有沒有被擋 */
+async function batchDownload(){
+  const list = pickedEntries();
+  if(!list.length || batchBusy) return;
+  batchBusy=true; renderSelBar();
+  let ok=0, bad=0;
+  for(let i=0;i<list.length;i++){
+    const f=list[i];
+    $('#selDownloadTxt').textContent = `下載中 ${i+1}/${list.length}`;
+    try{
+      if(f.category==='text'){
+        saveBlob(new Blob([f.text||''],{type:'text/plain;charset=utf-8'}), f.name+'.txt');
+      }else{
+        saveBlob(await fetchDecrypted(f), f.name);
+      }
+      ok++;
+      if(i<list.length-1) await sleep(800);   // 給瀏覽器時間處理上一個下載
+    }catch(e){ bad++; }
+  }
+  batchBusy=false;
+  toast(bad?'err':'ok', bad ? `下載 ${ok} 個,${bad} 個失敗` : `已解密下載 ${ok} 個`);
+  if(ok && !bad) exitSelect(); else renderSelBar();
+}
+
+function openMoveSheet(){
+  const list=pickedEntries();
+  if(!list.length) return;
+  $('#moveSub').textContent = `已選 ${list.length} 個項目,選擇要移到哪裡`;
+  const box=$('#moveList'); box.innerHTML='';
+  const opts = [{id:'', label:'📄 未分類'}]
+    .concat((idx.folders||[]).map(f=>({id:f.id, label:'📁 '+f.name})));
+  opts.forEach(o=>{
+    const b=document.createElement('button');
+    const already = list.filter(f=>(f.folder||'')===o.id).length;
+    b.className='move-item'+(already===list.length?' cur':'');
+    b.innerHTML = `<span>${esc(o.label)}</span>`
+      + (already ? `<span class="mi-n">已有 ${already} 個</span>` : '');
+    b.addEventListener('click', ()=>doMove(o.id));
+    box.appendChild(b);
+  });
+  if(!(idx.folders||[]).length){
+    const p=document.createElement('p');
+    p.className='sub'; p.style.margin='4px 0 0';
+    p.textContent='還沒有任何資料夾,先在上方的資料夾列按「＋ 新資料夾」建立一個。';
+    box.appendChild(p);
+  }
+  $('#moveOverlay').classList.add('open');
+}
+function closeMoveSheet(){ $('#moveOverlay').classList.remove('open'); }
+
+async function doMove(folderId){
+  const ids = new Set(selected);
+  if(!ids.size) return;
+  closeMoveSheet();
+  batchBusy=true; $('#selMoveTxt').textContent='移動中…'; renderSelBar();
+  try{
+    await mutateIndex(x=>{ x.files.forEach(f=>{ if(ids.has(f.id)) f.folder = folderId; }); });
+    const where = folderId ? `「${folderName(folderId)}」` : '未分類';
+    batchBusy=false; exitSelect();
+    toast('ok', `已把 ${ids.size} 個項目移到${where}`);
+  }catch(e){
+    batchBusy=false; renderSelBar();
+    toast('err', e.decrypt ? e.message : `移動失敗:${e.message}`);
+  }
+}
+
+async function batchDelete(){
+  const list = pickedEntries();
+  if(!list.length || batchBusy) return;
+  if(!confirm(`確定刪除這 ${list.length} 個項目?\n\n此動作無法復原。`)) return;
+  batchBusy=true; renderSelBar();
+  let ok=0; const failed=[];
+  // 逐一刪除實體檔(每次刪除都是一次 commit,並行會衝突);文字筆記沒有實體檔
+  for(let i=0;i<list.length;i++){
+    $('#selDeleteTxt').textContent = `刪除中 ${i+1}/${list.length}`;
+    const f=list[i];
+    try{ if(f.path) await ghDelete(f.path, f.sha); ok++; }
+    catch(e){ failed.push(f.id); }
+  }
+  // 只有成功刪掉實體檔的才從清單移除,失敗的留著讓使用者重試
+  const done = new Set(list.filter(f=>!failed.includes(f.id)).map(f=>f.id));
+  try{
+    await mutateIndex(x=>{ x.files = x.files.filter(f=>!done.has(f.id)); });
+    batchBusy=false; exitSelect();
+    toast(failed.length?'err':'ok',
+      failed.length ? `已刪除 ${done.size} 個,${failed.length} 個失敗` : `已刪除 ${done.size} 個項目`);
+  }catch(e){
+    batchBusy=false; renderSelBar();
+    toast('err', e.decrypt ? e.message : `刪除失敗:${e.message}`);
+  }
+}
+
 /* ============ 文字筆記 ============ */
 /* 內容直接存在 index.enc 的 f.text(索引整份加密),不佔用 data/ 空間,
    好處是點開即顯示、複製不用等網路 */
@@ -1368,6 +1570,8 @@ function render(){
   $('#noteAdd').classList.toggle('show', activeCat==='text' && !searching);
   renderBatch();
   renderFolders();
+  // 多選時把上傳區與資料夾列收起來,畫面專心在挑選
+  if(selectMode){ $('#uploadZone').style.display='none'; $('#noteAdd').classList.remove('show'); }
   // 正在看的分類 → 該分類檔案標記為已讀
   if(!searching) markCatSeen(activeCat);
   // tabs:badge=未讀數(點開即消),cnt=固定總數
@@ -1402,7 +1606,15 @@ function render(){
       : activeFolder ? `${catLabel} · 📁 ${folderName(activeFolder)}`
       : catLabel;
   }
-  countPill.textContent = `${items.length + ups.length} 個檔案`;
+  visibleItems = items;
+  // 切換分類/資料夾後,已選但看不到的項目要拿掉,避免誤刪看不到的東西
+  if(selectMode){
+    const vis=new Set(items.map(f=>f.id));
+    [...selected].forEach(id=>{ if(!vis.has(id)) selected.delete(id); });
+  }
+  countPill.textContent = selectMode
+    ? `已選 ${selected.size} / ${items.length}`
+    : `${items.length + ups.length} 個檔案`;
 
   $('#btnSettings').classList.toggle('dot-warn', !isConfigured());
 
@@ -1440,6 +1652,7 @@ function render(){
           <button class="fbtn copy" title="複製內容">${copySVG()}</button>
           <button class="fbtn del" title="刪除">${delSVG()}</button>
         </div>`;
+      if(applyPicking(el, f)){ listEl.appendChild(el); continue; }
       el.querySelector('.open-area').addEventListener('click', ()=>openNoteViewer(f));
       el.querySelector('.copy').addEventListener('click', async ev=>{
         const b=ev.currentTarget;
@@ -1466,6 +1679,7 @@ function render(){
         <button class="fbtn dl" title="下載儲存">${dlSVG()}</button>
         <button class="fbtn del" title="刪除">${delSVG()}</button>
       </div>`;
+    if(applyPicking(el, f)){ listEl.appendChild(el); continue; }
     el.querySelector('.open-area').addEventListener('click', ()=>openEntry(f));
     el.querySelector('.dl').addEventListener('click', ev=>downloadEntry(f, ev.currentTarget));
     el.querySelector('.del').addEventListener('click', ()=>{ if(confirm(`確定刪除「${f.name}」?`)) deleteEntry(f,false); });
@@ -1487,8 +1701,22 @@ function render(){
            $('#emptyDesc').textContent='從上方上傳,或在另一台裝置傳送後按重新整理'; }
   }
   $('#btnRefreshTop').classList.toggle('spin', loading);
+  renderSelBar();
 }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* 多選模式下把卡片改成「可勾選」:前面加勾選圈、拿掉右邊的操作鍵、
+   整張卡點下去就是勾選。回傳 true 代表已處理,呼叫端不要再綁原本的開啟/下載/刪除 */
+function applyPicking(el, f){
+  if(!selectMode) return false;
+  el.classList.add('picking');
+  if(selected.has(f.id)) el.classList.add('picked');
+  const btns = el.querySelector('.fbtns'); if(btns) btns.remove();
+  el.insertAdjacentHTML('afterbegin', `<div class="chk">${checkSVG()}</div>`);
+  el.addEventListener('click', ()=>togglePick(f.id));
+  return true;
+}
+function checkSVG(){ return `<svg viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L19 7" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`; }
 
 /* SVG helpers */
 function typeIconSVG(cat,name){
@@ -1678,12 +1906,12 @@ $('#btnTest').addEventListener('click', async ()=>{
 function requireConfig(){ if(!isConfigured()){ toast('info','請先完成設定'); openSettings(); return false; } return true; }
 
 /* ============ 事件:上傳 / 拖曳 / 頁籤 ============ */
-const drop=$('#drop'), fileInput=$('#fileInput');
+const drop=$('#drop'), fileInput=$('#fileInput'), photoInput=$('#photoInput');
 drop.addEventListener('click', ()=> requireConfig() && fileInput.click());
-$('#brandUpload').addEventListener('click', ()=> requireConfig() && fileInput.click());
+/* 左上角改成直接開相簿多選(任何分頁都能按)。一般檔案仍走「最近」分頁的上傳格子 */
+$('#brandUpload').addEventListener('click', ()=> requireConfig() && photoInput.click());
 fileInput.addEventListener('change', e=>{ handleFiles(e.target.files); fileInput.value=''; });
 /* 相簿多選:accept=image/* 讓手機直接開相簿,省掉「拍照/照片圖庫/瀏覽」那一層 */
-const photoInput=$('#photoInput');
 $('#photoBtn').addEventListener('click', ()=> requireConfig() && photoInput.click());
 photoInput.addEventListener('change', e=>{ handleFiles(e.target.files); photoInput.value=''; });
 ;['dragenter','dragover'].forEach(ev=> drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.add('drag'); }));
@@ -1708,6 +1936,16 @@ function clearSearch(){ if(searchQuery||searchInput.value){ searchInput.value=''
 
 document.querySelectorAll('.tab').forEach(t=> t.addEventListener('click', ()=>{ clearSearch(); activeCat=t.dataset.cat; render(); }));
 $('#btnRefreshTop').addEventListener('click', ()=>refresh(true));
+
+/* ============ 多選事件 ============ */
+$('#btnSelect').addEventListener('click', ()=> requireConfig() && enterSelect());
+$('#btnSelectCancel').addEventListener('click', exitSelect);
+$('#btnSelectAll').addEventListener('click', selectAllVisible);
+$('#selDownload').addEventListener('click', batchDownload);
+$('#selMove').addEventListener('click', openMoveSheet);
+$('#selDelete').addEventListener('click', batchDelete);
+$('#moveCancel').addEventListener('click', closeMoveSheet);
+$('#moveOverlay').addEventListener('click', e=>{ if(e.target.id==='moveOverlay') closeMoveSheet(); });
 
 /* ============ 資料夾事件 ============ */
 $('#folderCancel').addEventListener('click', closeFolderEditor);
