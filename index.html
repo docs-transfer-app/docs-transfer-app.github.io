@@ -387,6 +387,17 @@
   .field{margin-bottom:15px}
   .field label{display:block;font-size:12.5px;font-weight:650;margin-bottom:6px}
   .field .hint{font-size:11.5px;color:var(--muted);font-weight:400;margin-top:5px;line-height:1.5}
+  /* 金鑰/密碼欄:不用 type=password,否則 Safari 會當成登入表單自動填入,
+     把使用者的加密密碼換掉(換掉就解不開雲端資料)。改用文字欄 + CSS 遮蔽。 */
+  .secret-wrap{position:relative}
+  .secret-wrap input{padding-right:44px!important}
+  input.masked{-webkit-text-security:disc;text-security:disc}
+  input.masked.show{-webkit-text-security:none;text-security:none}
+  .eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);
+    width:32px;height:32px;border:none;background:none;cursor:pointer;
+    font-size:15px;line-height:1;opacity:.55;border-radius:8px}
+  .eye:hover{opacity:1;background:var(--surface2)}
+  .eye.on{opacity:1}
   .field input{width:100%;padding:12px 13px;border-radius:12px;border:1px solid var(--border);
     background:var(--surface2);color:var(--text);font-size:16px;font-family:inherit;transition:border-color .2s,box-shadow .2s}
   .field input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
@@ -561,7 +572,8 @@
 
     <div class="field">
       <label>GitHub 帳號</label>
-      <input id="inOwner" placeholder="你的 GitHub 使用者名稱" autocapitalize="off" autocorrect="off" spellcheck="false" />
+      <input id="inOwner" placeholder="你的 GitHub 使用者名稱" autocapitalize="off" autocorrect="off" spellcheck="false"
+             autocomplete="off" name="cft-owner" data-lpignore="true" data-1p-ignore data-form-type="other" />
       <div class="hint">你的 GitHub 使用者名稱。</div>
     </div>
     <div class="field">
@@ -571,12 +583,22 @@
     </div>
     <div class="field">
       <label>GitHub 存取金鑰 (PAT)</label>
-      <input id="inPat" type="password" placeholder="ghp_ 或 github_pat_ 開頭" autocapitalize="off" autocorrect="off" spellcheck="false" />
+      <div class="secret-wrap">
+        <input id="inPat" type="text" class="masked" placeholder="ghp_ 或 github_pat_ 開頭"
+               autocapitalize="off" autocorrect="off" spellcheck="false"
+               autocomplete="off" name="cft-token" data-lpignore="true" data-1p-ignore data-form-type="other" />
+        <button type="button" class="eye" id="eyePat" aria-label="顯示/隱藏">👁</button>
+      </div>
       <div class="hint">在 GitHub → Settings → Developer settings → Personal access tokens 建立,勾選 <b>repo</b> 權限(或 Fine-grained 對此私人庫給 Contents 讀寫)。</div>
     </div>
     <div class="field">
       <label>加密密碼</label>
-      <input id="inPass" type="password" placeholder="自訂一組密碼" autocapitalize="off" autocorrect="off" spellcheck="false" />
+      <div class="secret-wrap">
+        <input id="inPass" type="text" class="masked" placeholder="自訂一組密碼"
+               autocapitalize="off" autocorrect="off" spellcheck="false"
+               autocomplete="off" name="cft-secret" data-lpignore="true" data-1p-ignore data-form-type="other" />
+        <button type="button" class="eye" id="eyePass" aria-label="顯示/隱藏">👁</button>
+      </div>
       <div class="hint">電腦和手機要設<b>完全一樣</b>的密碼,檔案才能互通解密。此密碼不會上傳。</div>
       <div class="hint">密碼校驗碼:<b id="passCode" style="color:var(--accent);letter-spacing:.08em">—</b> ← 兩台裝置顯示<b>相同代碼</b>,密碼才真的一致</div>
     </div>
@@ -705,7 +727,7 @@
 <div class="toasts" id="toasts"></div>
 
 <script>
-const APP_VERSION = 'v25';  /* 每次改版就 +1,方便確認有更新到 */
+const APP_VERSION = 'v26';  /* 每次改版就 +1,方便確認有更新到 */
 
 /* ============ 設定 (localStorage) ============ */
 const CFG_KEY = 'cft.config.v1';
@@ -1967,13 +1989,14 @@ function openSettings(){
   overlay.classList.add('open');
 }
 /* 密碼校驗碼:由密碼雜湊出 4 字代碼,兩台裝置相同代碼=密碼一致(不洩漏密碼) */
-async function updatePassCode(){
-  const pw=$('#inPass').value.trim();
-  const el=$('#passCode');
-  if(!pw){ el.textContent='—'; return; }
+async function passCodeOf(pw){
+  if(!pw) return '—';
   const h=new Uint8Array(await crypto.subtle.digest('SHA-256', te.encode('cft-code/'+pw)));
   const AB='34679ACDEFHJKMNPRTWXY';   // 避開易混淆字元
-  el.textContent = [h[0],h[1],h[2],h[3]].map(b=>AB[b%AB.length]).join('');
+  return [h[0],h[1],h[2],h[3]].map(b=>AB[b%AB.length]).join('');
+}
+async function updatePassCode(){
+  $('#passCode').textContent = await passCodeOf($('#inPass').value.trim());
 }
 $('#inPass').addEventListener('input', updatePassCode);
 /* ============ 清理孤兒檔案 ============
@@ -2077,7 +2100,12 @@ $('#btnClearAll').addEventListener('click', async ()=>{
         }
       }
     }
-    idx={files:[]}; idxSha=null; thumbs={}; saveThumbs();
+    // 清乾淨:資料夾、選取、待分享、縮圖都要一起歸零,否則畫面會殘留已經不存在的東西
+    idx={files:[],folders:[]}; idxSha=null;
+    thumbs={}; saveThumbs();
+    activeFolder=''; pendingShare=null; orphanFound=null;
+    selectMode=false; selected.clear();
+    seenIds=new Set(); saveSeen();
     toast('ok','已清空,可以重新開始上傳了'); render(); updateStorInfo();
   }catch(e){ toast('err','清空失敗:'+e.message); }
   finally{ btn.disabled=false; btn.textContent='🗑️ 清空全部'; }
@@ -2089,13 +2117,39 @@ $('#viewer').addEventListener('click', e=>{ if(e.target.id==='viewer'||e.target.
 $('#viewerDl').addEventListener('click', ()=>{ if(viewerEntry) downloadEntry(viewerEntry, $('#viewerDl')); });
 $('#viewerShare').addEventListener('click', shareFromViewer);
 
-$('#btnSave').addEventListener('click', ()=>{
+$('#btnSave').addEventListener('click', async ()=>{
+  const newPass = $('#inPass').value.trim();
+  /* 加密密碼一旦換掉,雲端上用舊密碼加密的東西就全部解不開。
+     不管是打錯、還是被瀏覽器自動填入偷偷換掉,都必須先攔下來讓使用者確認。 */
+  if(cfg.password && newPass !== cfg.password){
+    const oldCode = await passCodeOf(cfg.password);
+    const newCode = await passCodeOf(newPass);
+    const msg = newPass
+      ? `⚠️ 你正在更改「加密密碼」\n\n目前:${oldCode}\n改成:${newCode}\n\n改掉之後,雲端上已經加密的檔案將無法解開(除非改回原本的密碼)。\n\n確定要改嗎?`
+      : `⚠️ 你正在把「加密密碼」清空\n\n清空後將無法解開雲端上的任何檔案。\n\n確定嗎?`;
+    if(!confirm(msg)){
+      $('#inPass').value = cfg.password;   // 還原,避免使用者以為已經改掉
+      updatePassCode();
+      toast('info','已取消,加密密碼維持原本的');
+      return;
+    }
+  }
   cfg.owner=$('#inOwner').value.trim(); cfg.repo=$('#inRepo').value.trim();
-  cfg.pat=$('#inPat').value.trim(); cfg.password=$('#inPass').value.trim();
+  cfg.pat=$('#inPat').value.trim(); cfg.password=newPass;
   cfg.autoDelete=$('#swAutoDel').classList.contains('on');
   _key=null; _keyPw=null; saveCfg(); closeSettings();
   toast('ok','設定已儲存'); refresh(false);
 });
+
+/* 顯示/隱藏金鑰與密碼:看得到內容才能發現它被改掉了 */
+function bindEye(btnSel, inputSel){
+  $(btnSel).addEventListener('click', ()=>{
+    const inp=$(inputSel), on=inp.classList.toggle('show');
+    $(btnSel).classList.toggle('on', on);
+  });
+}
+bindEye('#eyePat', '#inPat');
+bindEye('#eyePass', '#inPass');
 
 $('#btnTest').addEventListener('click', async ()=>{
   const owner=$('#inOwner').value.trim(), repo=$('#inRepo').value.trim(), pat=$('#inPat').value.trim();
