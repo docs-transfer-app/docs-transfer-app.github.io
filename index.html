@@ -727,7 +727,7 @@
 <div class="toasts" id="toasts"></div>
 
 <script>
-const APP_VERSION = 'v27';  /* 每次改版就 +1,方便確認有更新到 */
+const APP_VERSION = 'v28';  /* 每次改版就 +1,方便確認有更新到 */
 
 /* ============ 設定 (localStorage) ============ */
 const CFG_KEY = 'cft.config.v1';
@@ -785,7 +785,11 @@ async function ghErr(r, fallback){
    Safari 會把同網址的 GET 結果留著,重讀時可能拿到清空前的舊 index.enc,
    而舊檔是用舊密碼加密的 → 解不開,看起來就像「密碼突然錯了」。
    /git/blobs/{sha} 因為網址就是內容雜湊,不可能過期,才可以讓它快取。 */
-function noCache(){ return {headers:{...ghHeaders(),'Cache-Control':'no-cache'}, cache:'no-store'}; }
+/* 注意:這裡不可以加 Cache-Control 這類請求標頭。它是「非簡單標頭」,
+   會讓瀏覽器先送一個 OPTIONS 預檢請求,而公司網路的代理常常把 OPTIONS 擋掉,
+   結果就是整個請求發不出去(Failed to fetch)。
+   cache:'no-store' 加上網址帶時間戳已經足夠防快取,而且都不會觸發預檢。 */
+function noCache(){ return {headers:ghHeaders(), cache:'no-store'}; }
 function bust(url){ return url + (url.includes('?')?'&':'?') + '_ts=' + Date.now(); }
 
 async function ghGetContent(path){ // -> {sha, bytes} | null
