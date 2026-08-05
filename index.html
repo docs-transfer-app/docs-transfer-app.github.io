@@ -727,7 +727,7 @@
 <div class="toasts" id="toasts"></div>
 
 <script>
-const APP_VERSION = 'v26';  /* 每次改版就 +1,方便確認有更新到 */
+const APP_VERSION = 'v27';  /* 每次改版就 +1,方便確認有更新到 */
 
 /* ============ 設定 (localStorage) ============ */
 const CFG_KEY = 'cft.config.v1';
@@ -781,8 +781,15 @@ async function ghErr(r, fallback){
   let m=fallback; try{ const j=await r.json(); if(j.message) m=j.message; }catch(e){}
   const e=new Error(m); e.status=r.status; return e;
 }
+/* 會變動的資源(index.enc、data/ 清單)一定要繞過快取。
+   Safari 會把同網址的 GET 結果留著,重讀時可能拿到清空前的舊 index.enc,
+   而舊檔是用舊密碼加密的 → 解不開,看起來就像「密碼突然錯了」。
+   /git/blobs/{sha} 因為網址就是內容雜湊,不可能過期,才可以讓它快取。 */
+function noCache(){ return {headers:{...ghHeaders(),'Cache-Control':'no-cache'}, cache:'no-store'}; }
+function bust(url){ return url + (url.includes('?')?'&':'?') + '_ts=' + Date.now(); }
+
 async function ghGetContent(path){ // -> {sha, bytes} | null
-  const r = await fetch(`${repoBase()}/contents/${path}`, {headers:ghHeaders()});
+  const r = await fetch(bust(`${repoBase()}/contents/${path}`), noCache());
   if(r.status===404) return null;
   if(!r.ok) throw await ghErr(r,'讀取失敗');
   const d = await r.json();
@@ -847,7 +854,7 @@ async function ghPut(path, bytes, sha){
 }
 /* 列出資料夾內容(只有 metadata,不下載檔案本體)。資料夾不存在回空陣列 */
 async function ghListDir(path){
-  const r = await fetch(`${repoBase()}/contents/${path}`, {headers:ghHeaders()});
+  const r = await fetch(bust(`${repoBase()}/contents/${path}`), noCache());
   if(r.status===404) return [];
   if(!r.ok) throw await ghErr(r,'讀取清單失敗');
   const d = await r.json();
@@ -1078,6 +1085,17 @@ async function handleFiles(fileList){
   if(!requireConfig()) return;
   const files = [...fileList];
   if(!files.length) return;
+
+  /* 先確認雲端索引解得開再開始傳。
+     否則每個檔案都會先加密上傳成功、最後寫清單時才失敗,
+     結果是留下一堆看不到也刪不掉的孤兒檔,還跳一長串重複的錯誤訊息。 */
+  try{
+    await withIndexLock(()=>loadIndex());
+  }catch(e){
+    toast('err', e.decrypt ? e.message : `連不上雲端,先不上傳:${e.message}`);
+    return;
+  }
+
   folderAtUploadStart = targetFolder();
 
   const items = files.map(file => {
@@ -1097,7 +1115,8 @@ async function handleFiles(fileList){
     while(cursor < items.length){
       const it = items[cursor++];
       try{ await uploadOne(it.id, it.file); batch.ok++; }
-      catch(e){ batch.fail++; failed.push(`${it.file.name}(${e.message})`); }
+      // 解密失敗的訊息很長,整批列出去會變成一大坨重複文字,這裡只留短標籤
+      catch(e){ batch.fail++; failed.push(`${it.file.name}(${e.decrypt?'密碼解不開雲端清單':e.message})`); }
       finally{ uploading.delete(it.id); batch.done++; render(); }
     }
   }
@@ -2065,7 +2084,7 @@ async function updateStorInfo(){
     ? `現有 ${idx.files.length} 個檔案 · ${fmtSize(total)}` : '目前沒有檔案';
   $('#storInfo').textContent = base;
   try{   // 另抓含 git 歷史的總佔用(GitHub 建議單庫 <1GB)
-    const r = await fetch(repoBase(), {headers:ghHeaders()});
+    const r = await fetch(bust(repoBase()), noCache());
     if(r.ok){ const d=await r.json();
       $('#storInfo').textContent = `${base} · 雲端總佔用 ${fmtSize(d.size*1024)}(建議<1GB)`; }
   }catch(e){}
@@ -2086,10 +2105,10 @@ $('#btnClearAll').addEventListener('click', async ()=>{
   const btn=$('#btnClearAll'); btn.disabled=true; btn.textContent='清空中…';
   try{
     // 1. 刪除加密索引(不解密,只拿 sha)
-    const ir = await fetch(`${repoBase()}/contents/index.enc`, {headers:ghHeaders()});
+    const ir = await fetch(bust(`${repoBase()}/contents/index.enc`), noCache());
     if(ir.ok){ const d=await ir.json(); await ghDelete('index.enc', d.sha); }
     // 2. 直接列出 data/ 底下所有檔案硬刪
-    const lr = await fetch(`${repoBase()}/contents/data`, {headers:ghHeaders()});
+    const lr = await fetch(bust(`${repoBase()}/contents/data`), noCache());
     if(lr.ok){
       const items = await lr.json();
       if(Array.isArray(items)){
